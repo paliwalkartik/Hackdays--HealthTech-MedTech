@@ -10,16 +10,7 @@ from consultant import ClinicalConsultant
 from document_service import DocumentAnalysisService
 from fastapi.middleware.cors import CORSMiddleware
 import os
-
-# Load .env manually (python-dotenv may not be installed)
-_env_path = os.path.join(os.path.dirname(__file__), ".env")
-if os.path.exists(_env_path):
-    with open(_env_path) as _f:
-        for _line in _f:
-            _line = _line.strip()
-            if _line and not _line.startswith("#") and "=" in _line:
-                _k, _, _v = _line.partition("=")
-                os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
+from config import config
 
 from contextlib import asynccontextmanager
 
@@ -34,7 +25,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=config.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,31 +34,31 @@ app.add_middleware(
 mp_face_detection = mp.solutions.face_detection
 face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.5)
 
-vitals_engine = VitalsEngine(fps=30, window_seconds=10)
+vitals_engine = VitalsEngine(fps=30, window_seconds=config.WINDOW_SECONDS)
 
 consultant = None
 doc_service = None
 
 def get_consultant():
     global consultant
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    api_key = config.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         return None, "GEMINI_API_KEY is missing. Please set it in your environment or .env file."
     if consultant is None:
         try:
-            consultant = ClinicalConsultant(api_key=api_key)
+            consultant = ClinicalConsultant(api_key=api_key, model=config.GEMINI_MODEL)
         except Exception as e:
             return None, f"Failed to initialize ClinicalConsultant: {e}"
     return consultant, None
 
 def get_doc_service():
     global doc_service
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    api_key = config.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         return None, "GEMINI_API_KEY is missing. Please set it in your environment or .env file."
     if doc_service is None:
         try:
-            doc_service = DocumentAnalysisService(api_key=api_key)
+            doc_service = DocumentAnalysisService(api_key=api_key, model=config.GEMINI_MODEL)
         except Exception as e:
             return None, f"Failed to initialize DocumentAnalysisService: {e}"
     return doc_service, None
@@ -89,9 +80,8 @@ class GlobalState:
 state = GlobalState()
 
 def capture_thread():
-    print("Attempting to open webcam (0) with DirectShow...", flush=True)
-    # DirectShow is required on many Windows machines to avoid indefinite hanging
-    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    print(f"Attempting to open webcam ({config.CAMERA_INDEX}) with backend {config.CAMERA_BACKEND}...", flush=True)
+    cap = cv2.VideoCapture(config.CAMERA_INDEX, config.get_camera_backend_code())
         
     if not cap.isOpened():
         print("ERROR: Could not open webcam. Please check your camera permissions.", flush=True)
@@ -152,7 +142,7 @@ def capture_thread():
                         state.stable_duration += (time.time() - state.last_stable_time)
                         state.last_stable_time = time.time()
                         
-                    if state.stable_duration >= 60.0:
+                    if state.stable_duration >= config.MEASURE_SECONDS:
                         state.is_completed = True
                 else:
                     state.last_stable_time = None
@@ -168,7 +158,7 @@ def capture_thread():
                 cv2.putText(display_frame, "WARNING: PLEASE CENTER FACE IN BOX", (20, 40), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             else:
-                remaining = max(0, int(60 - state.stable_duration))
+                remaining = max(0, int(config.MEASURE_SECONDS - state.stable_duration))
                 cv2.putText(display_frame, f"STABLE: READING VITALS ({remaining}s REMAINING)", (20, 40), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 230, 118), 2)
             
@@ -198,8 +188,8 @@ def capture_thread():
                 if bpm > 0 and is_inside:
                     state.current_bpm = bpm
                     state.bpm_history.append(bpm)
-                    # Keep history for the last 10 seconds. At 30 FPS, ~300 frames.
-                    if len(state.bpm_history) > 300:
+                    # Keep history for the last WINDOW_SECONDS seconds. At 30 FPS, ~30 * WINDOW_SECONDS frames.
+                    if len(state.bpm_history) > int(30 * config.WINDOW_SECONDS):
                         state.bpm_history.pop(0)
 
             if results.detections:
@@ -256,8 +246,8 @@ def consult():
         return {"error": "Not enough data yet. Please ensure the patient's face is visible in the camera."}
     
     # Downsample BPM history to send roughly 1 reading per second to Gemini
-    # We have up to 300 readings. Take every 30th reading.
-    bpm_data = state.bpm_history[::30][-10:]
+    # We have up to 30 * WINDOW_SECONDS readings. Take every 30th reading.
+    bpm_data = state.bpm_history[::30][-config.WINDOW_SECONDS:]
     # Round the values for cleaner prompt
     bpm_data = [round(b, 1) for b in bpm_data]
     
@@ -287,6 +277,9 @@ async def analyze_report(file: UploadFile = File(...)):
         return {"error": err}
 
     file_bytes = await file.read()
+    if len(file_bytes) > config.max_upload_bytes:
+        return {"error": f"File size exceeds maximum allowed size of {config.MAX_UPLOAD_MB} MB"}
+
     result = doc_service_instance.analyze(
         file_bytes=file_bytes,
         filename=file.filename,
@@ -295,4 +288,4 @@ async def analyze_report(file: UploadFile = File(...)):
     return result
 
 if __name__ == "__main__":
-    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("api:app", host=config.API_HOST, port=config.API_PORT, reload=False)

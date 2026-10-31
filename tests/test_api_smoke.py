@@ -38,6 +38,7 @@ def test_reset_vitals_endpoint(client):
 def test_consult_missing_gemini_key_error(client, monkeypatch):
     """Assert /consult returns a clear error when GEMINI_API_KEY is not set."""
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr(api.config, "GEMINI_API_KEY", "")
     # Reset cached consultant client
     api.consultant = None
     response = client.get("/consult")

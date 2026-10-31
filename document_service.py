@@ -13,6 +13,7 @@ import cv2
 from PIL import Image
 
 from google import genai
+from config import config
 
 ANALYSIS_PROMPT = """
 You are a senior consultant physician and medical AI expert.
@@ -40,9 +41,10 @@ Return a comprehensive clinical assessment in the following strict JSON format (
 
 
 class DocumentAnalysisService:
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: str = None, model: str = None):
         if api_key:
             os.environ["GEMINI_API_KEY"] = api_key
+        self.model = model or config.GEMINI_MODEL
         self.client = genai.Client()
 
     def _upload_report(self, file_path: str, mime_type: str):
@@ -104,7 +106,7 @@ class DocumentAnalysisService:
                 contents.append(pil_frame)
 
             response = self.client.models.generate_content(
-                model="gemini-2.5-flash",
+                model=self.model,
                 contents=contents,
             )
             raw = response.text.strip()

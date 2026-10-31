@@ -3,17 +3,18 @@ import os
 import cv2
 from PIL import Image
 import json
+from config import config
 
 class ClinicalConsultant:
-    def __init__(self, api_key=None):
-        # Using Gemini 1.5 Flash as requested
+    def __init__(self, api_key=None, model: str = None):
         if api_key:
             os.environ["GEMINI_API_KEY"] = api_key
+        self.model = model or config.GEMINI_MODEL
         self.client = genai.Client()
 
     def analyze(self, bpm_data, face_frame):
         """
-        bpm_data: list of BPM values over the 10-second window
+        bpm_data: list of BPM values over the window
         face_frame: OpenCV BGR image (numpy array)
         """
         if face_frame is None:
@@ -27,7 +28,7 @@ class ClinicalConsultant:
 
         prompt = f"""
         You are a senior clinical consultant AI. Analyze the patient's face visually and their heart rate data.
-        Over the last 10 seconds, their BPM data was: {bpm_data}. The average BPM is {avg_bpm:.1f}.
+        Over the last {config.WINDOW_SECONDS} seconds, their BPM data was: {bpm_data}. The average BPM is {avg_bpm:.1f}.
         Return a JSON-formatted "Clinical Snapshot" with the following keys:
         - "average_bpm": Number
         - "visual_assessment": String (analyze their facial expression, apparent stress level, or paleness)
@@ -38,7 +39,7 @@ class ClinicalConsultant:
 
         try:
             response = self.client.models.generate_content(
-                model='gemini-2.5-flash',
+                model=self.model,
                 contents=[prompt, pil_image]
             )
             result_text = response.text.strip()

@@ -14,6 +14,7 @@ from streamlit_js_eval import get_geolocation
 
 import google_auth_oauthlib.flow
 from googleapiclient.discovery import build
+from config import config
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
@@ -45,7 +46,7 @@ def decode_session(token: str):
 
 def set_cookie(token: str):
     components.html(f"""<script>
-    document.cookie = "{COOKIE_NAME}={token}; path=/; max-age={60*60*24*30}; SameSite=Lax";
+    document.cookie = "{COOKIE_NAME}={token}; path=/; max-age={60*60*24*config.SESSION_TTL_DAYS}; SameSite=Lax";
     </script>""", height=0)
 
 def clear_cookie():
@@ -59,20 +60,20 @@ def get_cookie() -> str:
 
 # ── Database ──────────────────────────────────────────────────────────────────
 def init_db():
-    conn = sqlite3.connect('health_data.db')
+    conn = sqlite3.connect(config.DB_PATH)
     conn.cursor().execute('''CREATE TABLE IF NOT EXISTS heart_rate_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT,
         bpm REAL, analysis TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
     conn.commit(); conn.close()
 
 def save_log(email, bpm, analysis):
-    conn = sqlite3.connect('health_data.db')
+    conn = sqlite3.connect(config.DB_PATH)
     conn.cursor().execute('INSERT INTO heart_rate_logs (username,bpm,analysis) VALUES(?,?,?)',
                           (email, bpm, analysis))
     conn.commit(); conn.close()
 
 def fetch_logs(email):
-    conn = sqlite3.connect('health_data.db')
+    conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
     c.execute('SELECT timestamp,bpm,analysis FROM heart_rate_logs WHERE username=? ORDER BY timestamp DESC',(email,))
     rows = c.fetchall(); conn.close(); return rows
@@ -397,7 +398,7 @@ with tab1:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         st.markdown("<div class='label-sm'>Patient Camera Feed</div>", unsafe_allow_html=True)
         st.markdown(
-            '<img src="http://localhost:8000/video_feed" width="100%" '
+            f'<img src="{config.API_BASE_URL}/video_feed" width="100%" '
             'style="border-radius:12px;border:1px solid rgba(255,255,255,0.1);">',
             unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
@@ -410,7 +411,7 @@ with tab1:
         if st.button("⚡ Generate Clinical Snapshot", key="snapshot_btn"):
             with st.spinner("Analyzing vitals and facial data via Gemini..."):
                 try:
-                    res = requests.get("http://localhost:8000/consult", timeout=60)
+                    res = requests.get(f"{config.API_BASE_URL}/consult", timeout=60)
                     if res.status_code == 200:
                         data = res.json()
                         if "error" in data:
@@ -448,7 +449,7 @@ with tab1:
         with meas_col2:
             if st.button("🔄 New Reading", key="reset_btn"):
                 try:
-                    requests.post("http://localhost:8000/reset_vitals", timeout=3)
+                    requests.post(f"{config.API_BASE_URL}/reset_vitals", timeout=3)
                     if 'pulse_data' in st.session_state:
                         st.session_state.pulse_data = []
                     st.success("Ready for new reading!")
@@ -503,7 +504,7 @@ with tab3:
         if analyze_btn:
             with st.spinner("📤 Uploading to Gemini File API... (10-20 seconds)"):
                 try:
-                    res = requests.post("http://localhost:8000/analyze_report",
+                    res = requests.post(f"{config.API_BASE_URL}/analyze_report",
                                         files={"file":(uploaded_file.name,
                                                        uploaded_file.getvalue(),
                                                        uploaded_file.type)}, timeout=120)
@@ -666,7 +667,7 @@ if 'pulse_data' not in st.session_state:
 
 while True:
     try:
-        res = requests.get("http://localhost:8000/vitals", timeout=1)
+        res = requests.get(f"{config.API_BASE_URL}/vitals", timeout=1)
         if res.status_code == 200:
             data           = res.json()
             bpm            = data.get("bpm", 0)
@@ -679,8 +680,8 @@ while True:
             if len(st.session_state.pulse_data) > 120:
                 st.session_state.pulse_data.pop(0)
 
-            pct  = min(100, int((stable_dur / 60.0) * 100))
-            secs = max(0, 60 - int(stable_dur))
+            pct  = min(100, int((stable_dur / config.MEASURE_SECONDS) * 100))
+            secs = max(0, int(config.MEASURE_SECONDS - stable_dur))
 
             if is_completed:
                 bpm_html = f"<div class='bpm-number'>{bpm:.0f}</div>"
