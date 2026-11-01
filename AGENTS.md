@@ -9,7 +9,7 @@ Touchless heart-rate monitoring from a webcam (rPPG, POS algorithm) + Gemini-bas
 **It is a wellness/triage aid, not a medical device.** Never write copy, comments, or UI text that claims diagnosis, "clinical-grade" or "medical-grade" accuracy, or that an action happened when it did not.
 
 ## Stack
-Python 3.11 · FastAPI + uvicorn (`api.py`, port 8000) · Streamlit (`dashboard.py`, port 8501) · OpenCV · Mediapipe 0.10.14 (`mp.solutions`) · NumPy/SciPy · google-genai (Gemini) · SQLite (`health_data.db`) · Google OAuth.
+Python 3.11 · FastAPI + uvicorn (`api.py`, port 8000) · Streamlit (`dashboard.py`, port 8501) · OpenCV · Mediapipe 0.10.14 (`mp.solutions`) · NumPy/SciPy · google-genai (Gemini) · SQLite (`health_data.db`) · Streamlit OIDC (Google OAuth).
 
 ## Files (current)
 | File | Role |
@@ -20,7 +20,7 @@ Python 3.11 · FastAPI + uvicorn (`api.py`, port 8000) · Streamlit (`dashboard.
 | `consultant.py` | `ClinicalConsultant`: Gemini snapshot from BPM list + face frame |
 | `document_service.py` | `DocumentAnalysisService`: Gemini File API report analysis |
 | `dashboard.py` | Streamlit entrypoint (page setup, wiring, tabs) |
-| `auth.py` | Authentication, OAuth2 flow, session tokens, and cookie helpers |
+| `auth.py` | Streamlit OIDC wrapper, profile sanitization, and Dev Mode bypass |
 | `db.py` | Context-managed SQLite database interface for health records |
 | `hospitals.py` | Hospital data loader and specialty lookup |
 | `data/hospitals.json` | Hospital dataset for Bhopal medical centers |

@@ -94,12 +94,22 @@ def render_live_ui(email: str) -> tuple[st.delta_generator.DeltaGenerator, st.de
 def run_live_polling(
     bpm_placeholder: st.delta_generator.DeltaGenerator,
     chart_placeholder: st.delta_generator.DeltaGenerator,
+    max_iterations: int | None = None,
 ) -> None:
     """Continuously poll backend for vitals and update telemetry UI in real-time."""
+    import os
+
     if "pulse_data" not in st.session_state:
         st.session_state.pulse_data = []
 
+    if max_iterations is None and os.environ.get("IV_DISABLE_POLLING") == "1":
+        max_iterations = 1
+
+    iterations = 0
     while True:
+        if max_iterations is not None and iterations >= max_iterations:
+            break
+        iterations += 1
         try:
             res = requests.get(f"{config.API_BASE_URL}/vitals", timeout=1)
             if res.status_code == 200:

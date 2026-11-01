@@ -1,141 +1,186 @@
 """
-auth.py — Authentication, OAuth2 Flow, Session Token, and Cookie Helpers
+auth.py — Streamlit OIDC Authentication, User Profile Sanitization, and Dev Mode Bypass
 """
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json
+import html
 import os
 from typing import Any, Dict, Optional
 
-import google_auth_oauthlib.flow
-from googleapiclient.discovery import build
 import streamlit as st
-import streamlit.components.v1 as components
-
-from config import config
-
-os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
-
-# ── Config ────────────────────────────────────────────────────────────────────
-CREDENTIALS_FILE = "google_credentials.json"
-REDIRECT_URI = "http://localhost:8501"
-SCOPES = [
-    "openid",
-    "https://www.googleapis.com/auth/userinfo.profile",
-    "https://www.googleapis.com/auth/userinfo.email",
-]
-COOKIE_SECRET = os.environ.get("COOKIE_SECRET") or "intelli_vitals_2026_secret_hmac_key"
-COOKIE_NAME = "iv_session"
 
 
-# ── Session Token (cookie-based persistence) ──────────────────────────────────
-def _sign(data: str) -> str:
-    return hmac.new(COOKIE_SECRET.encode(), data.encode(), hashlib.sha256).hexdigest()
+# ── Dev Mode User ─────────────────────────────────────────────────────────────
+DEV_USER: Dict[str, Any] = {
+    "sub": "dev-user-001",
+    "email": "dev@intellivitals.local",
+    "name": "Dev User",
+    "picture": "",
+    "is_logged_in": True,
+}
 
 
-def encode_session(user_info: Dict[str, Any]) -> str:
-    payload = base64.urlsafe_b64encode(json.dumps(user_info).encode()).decode()
-    sig = _sign(payload)
-    return f"{payload}.{sig}"
+def is_dev_mode() -> bool:
+    """Check whether local development login bypass is enabled via environment."""
+    return os.environ.get("IV_DEV_LOGIN") == "1"
 
 
-def decode_session(token: str) -> Optional[Dict[str, Any]]:
+def is_auth_configured() -> bool:
+    """Check whether Streamlit OIDC auth is configured in secrets.toml or st.secrets."""
     try:
-        payload, sig = token.rsplit(".", 1)
-        if not hmac.compare_digest(_sign(payload), sig):
-            return None
-        return json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
+        # Check local .streamlit/secrets.toml first
+        project_secrets = os.path.join(os.getcwd(), ".streamlit", "secrets.toml")
+        if os.path.isfile(project_secrets):
+            try:
+                import toml
+
+                with open(project_secrets, "r", encoding="utf-8") as f:
+                    data = toml.load(f)
+                auth_data = data.get("auth", {})
+                google_data = (
+                    auth_data.get("google", {})
+                    if isinstance(auth_data.get("google"), dict)
+                    else {}
+                )
+                has_client_id = bool(auth_data.get("client_id") or google_data.get("client_id"))
+                has_client_secret = bool(auth_data.get("client_secret") or google_data.get("client_secret"))
+                has_cookie_secret = bool(auth_data.get("cookie_secret"))
+                return has_client_id and has_client_secret and has_cookie_secret
+            except Exception:
+                pass
+
+        # Check st.secrets fallback
+        try:
+            if "auth" in st.secrets:
+                auth_data = st.secrets["auth"]
+                google_data = (
+                    auth_data.get("google", {})
+                    if isinstance(auth_data.get("google"), dict)
+                    else {}
+                )
+                has_client_id = bool(auth_data.get("client_id") or google_data.get("client_id"))
+                has_client_secret = bool(auth_data.get("client_secret") or google_data.get("client_secret"))
+                has_cookie_secret = bool(auth_data.get("cookie_secret"))
+                return has_client_id and has_client_secret and has_cookie_secret
+        except Exception:
+            pass
+
+        return False
     except Exception:
-        return None
+        return False
 
 
-def set_cookie(token: str) -> None:
-    max_age = 60 * 60 * 24 * config.SESSION_TTL_DAYS
-    components.html(
-        f"""<script>
-    document.cookie = "{COOKIE_NAME}={token}; path=/; max-age={max_age}; SameSite=Lax";
-    </script>""",
-        height=0,
-    )
+def is_logged_in() -> bool:
+    """Return True if user is authenticated via Streamlit OIDC or dev bypass."""
+    # Check Dev Mode bypass session
+    if is_dev_mode() and st.session_state.get("dev_user_logged_in", False):
+        user = st.session_state.get("dev_user", DEV_USER)
+        st.session_state["connected"] = True
+        st.session_state["user_info"] = user
+        return True
 
-
-def clear_cookie() -> None:
-    components.html(
-        f"""<script>
-    document.cookie = "{COOKIE_NAME}=; path=/; max-age=0";
-    </script>""",
-        height=0,
-    )
-
-
-def get_cookie() -> str:
-    cookies = st.context.cookies
-    return cookies.get(COOKIE_NAME, "")
-
-
-# ── OAuth ─────────────────────────────────────────────────────────────────────
-def build_flow():
-    return google_auth_oauthlib.flow.Flow.from_client_secrets_file(
-        CREDENTIALS_FILE,
-        scopes=SCOPES,
-        redirect_uri=REDIRECT_URI,
-        autogenerate_code_verifier=False,
-    )
-
-
-def get_auth_url() -> str:
-    flow = build_flow()
-    url, state = flow.authorization_url(access_type="offline", prompt="select_account")
-    st.session_state["oauth_state"] = state
-    return url
-
-
-def exchange_code(code: str) -> Optional[Dict[str, Any]]:
+    # Check Streamlit built-in OIDC user
     try:
-        flow = build_flow()
-        flow.fetch_token(code=code)
-        svc = build("oauth2", "v2", credentials=flow.credentials)
-        return svc.userinfo().get().execute()
-    except Exception as e:
-        st.error(f"Login error: {e}")
-        return None
-
-
-def init_session_state() -> None:
-    """Restore user session from cookie if present and valid."""
-    if "connected" not in st.session_state:
-        token = get_cookie()
-        if token:
-            user = decode_session(token)
-            if user:
-                st.session_state["connected"] = True
-                st.session_state["user_info"] = user
-                return
-        st.session_state["connected"] = False
-        st.session_state["user_info"] = {}
-
-
-def handle_oauth_callback() -> None:
-    """Check query params for OAuth authorization code and log the user in."""
-    auth_code = st.query_params.get("code")
-    if auth_code and not st.session_state.get("connected"):
-        st.query_params.clear()
-        user = exchange_code(auth_code)
-        if user:
+        if st.user.get("is_logged_in", False):
+            user_data = {
+                "sub": str(st.user.get("sub", "")),
+                "email": str(st.user.get("email", "")),
+                "name": str(st.user.get("name", "User")),
+                "picture": str(st.user.get("picture", "")),
+                "is_logged_in": True,
+            }
             st.session_state["connected"] = True
-            st.session_state["user_info"] = user
-            set_cookie(encode_session(user))
-            st.rerun()
+            st.session_state["user_info"] = user_data
+            return True
+    except Exception:
+        pass
+
+    st.session_state["connected"] = False
+    st.session_state["user_info"] = {}
+    return False
+
+
+def get_current_user() -> Optional[Dict[str, Any]]:
+    """Return current user dict with sub, email, name, picture, or None."""
+    if is_dev_mode() and st.session_state.get("dev_user_logged_in", False):
+        return st.session_state.get("dev_user", DEV_USER)
+
+    try:
+        if st.user.get("is_logged_in", False):
+            return {
+                "sub": str(st.user.get("sub", "")),
+                "email": str(st.user.get("email", "")),
+                "name": str(st.user.get("name", "User")),
+                "picture": str(st.user.get("picture", "")),
+                "is_logged_in": True,
+            }
+    except Exception:
+        pass
+    return None
+
+
+def sanitize_picture_url(url: str) -> str:
+    """Sanitize and validate picture URL, ensuring safe http/https scheme and html escaping."""
+    if not url or not isinstance(url, str):
+        return ""
+    clean_url = url.strip()
+    if clean_url.startswith(("http://", "https://")):
+        return html.escape(clean_url, quote=True)
+    return ""
+
+
+def get_safe_user_profile(user: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    """Return an HTML-escaped, sanitized user profile dictionary."""
+    if user is None:
+        user = get_current_user() or {}
+    raw_name = str(user.get("name") or "User")
+    raw_email = str(user.get("email") or "")
+    raw_sub = str(user.get("sub") or "")
+    raw_pic = str(user.get("picture") or "")
+
+    name = html.escape(raw_name)
+    email = html.escape(raw_email)
+    sub = html.escape(raw_sub)
+    picture = sanitize_picture_url(raw_pic)
+    first_name = html.escape(raw_name.split()[0] if raw_name else "User")
+
+    return {
+        "name": name,
+        "email": email,
+        "sub": sub,
+        "picture": picture,
+        "first_name": first_name,
+    }
+
+
+def login() -> None:
+    """Initiate Google login via Streamlit OIDC."""
+    try:
+        st.login("google")
+    except Exception:
+        try:
+            st.login()
+        except Exception as e:
+            st.error(f"Login failed to initiate: {e}")
+
+
+def dev_login() -> None:
+    """Log in using local dev mode mock user."""
+    st.session_state["dev_user_logged_in"] = True
+    st.session_state["dev_user"] = DEV_USER
+    st.session_state["connected"] = True
+    st.session_state["user_info"] = DEV_USER
 
 
 def logout() -> None:
-    """Clear session cookie and reset session state."""
-    clear_cookie()
+    """Log out current user, clear session state, and invoke st.logout."""
+    st.session_state["dev_user_logged_in"] = False
+    st.session_state.pop("dev_user", None)
     st.session_state["connected"] = False
     st.session_state["user_info"] = {}
+    try:
+        st.logout()
+    except Exception:
+        pass
     st.rerun()
-

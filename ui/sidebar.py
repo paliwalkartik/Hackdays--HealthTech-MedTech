@@ -4,13 +4,20 @@ ui/sidebar.py — Sidebar Navigation, User Profile, OAuth Login, and Emergency S
 
 from __future__ import annotations
 
-import html
-import os
 import webbrowser
 import streamlit as st
 from streamlit_js_eval import get_geolocation
 
-from auth import CREDENTIALS_FILE, get_auth_url, logout
+from auth import (
+    dev_login,
+    get_current_user,
+    get_safe_user_profile,
+    is_auth_configured,
+    is_dev_mode,
+    is_logged_in,
+    login,
+    logout,
+)
 from ui.styles import apply_sos_styles
 
 
@@ -32,34 +39,46 @@ def render_sidebar() -> None:
             unsafe_allow_html=True,
         )
 
-        if not st.session_state.get("connected"):
-            st.markdown(
-                "<p style='color:#9CA3AF;font-size:13px;text-align:center;'>Sign in to access your health dashboard</p>",
-                unsafe_allow_html=True,
-            )
-            if os.path.exists(CREDENTIALS_FILE):
-                auth_url = get_auth_url()
+        if not is_logged_in():
+            if is_dev_mode():
+                st.warning("⚠️ **DEV MODE ACTIVE**\nAuth bypass enabled")
+                if st.button("🔑 Dev Login (Bypass)", key="sidebar_dev_login", use_container_width=True):
+                    dev_login()
+                    st.rerun()
+            elif is_auth_configured():
                 st.markdown(
-                    f"""
-                <a href="{auth_url}" target="_self" style="text-decoration:none;">
-                  <div style="display:flex;align-items:center;justify-content:center;gap:10px;
-                       background:linear-gradient(135deg,#00C9FF,#0066FF);color:white;
-                       border-radius:10px;padding:12px 20px;font-weight:600;font-size:14px;
-                       cursor:pointer;margin-top:8px;transition:opacity 0.2s;">
-                    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/768px-Google_%22G%22_logo.svg.png"
-                         width="18" height="18" style="background:white;border-radius:3px;padding:2px;">
-                    Sign in with Google
-                  </div>
-                </a>""",
+                    "<p style='color:#9CA3AF;font-size:13px;text-align:center;'>Sign in to access your health dashboard</p>",
                     unsafe_allow_html=True,
                 )
+                if st.button("🔐 Sign in with Google", key="sidebar_google_login", use_container_width=True):
+                    login()
             else:
-                st.error("google_credentials.json missing")
+                st.markdown(
+                    """
+                <div style='padding:12px;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);
+                            border-radius:8px;font-size:12px;color:#9CA3AF;text-align:center;'>
+                    <div style='color:#60A5FA;font-weight:600;margin-bottom:4px;'>ℹ️ Auth Setup Required</div>
+                    Configure <code>.streamlit/secrets.toml</code> or set <code>IV_DEV_LOGIN=1</code>.
+                </div>""",
+                    unsafe_allow_html=True,
+                )
         else:
-            user_info = st.session_state.get("user_info", {})
-            name = html.escape(user_info.get("name", "User"))
-            email = html.escape(user_info.get("email", ""))
-            picture = user_info.get("picture", "")
+            user = get_current_user() or {}
+            profile = get_safe_user_profile(user)
+            name = profile["name"]
+            email = profile["email"]
+            picture = profile["picture"]
+
+            if is_dev_mode():
+                st.markdown(
+                    """
+                <div style='text-align:center;margin-bottom:8px;'>
+                  <span style='background:rgba(234,179,8,0.2);color:#EAB308;padding:2px 8px;
+                               border-radius:4px;font-size:11px;font-weight:600;'>DEV MODE ACTIVE</span>
+                </div>""",
+                    unsafe_allow_html=True,
+                )
+
             if picture:
                 st.markdown(
                     f"""
@@ -86,7 +105,7 @@ def render_sidebar() -> None:
                 "<p style='font-size:11px;color:#4B5563;text-align:center;'>SESSION ACTIVE</p>",
                 unsafe_allow_html=True,
             )
-            if st.button("🚪 Log Out", use_container_width=True):
+            if st.button("🚪 Log Out", key="sidebar_logout_btn", use_container_width=True):
                 logout()
 
             # ── EMERGENCY SOS ────────────────────────────────────────────
@@ -148,31 +167,95 @@ def render_login_wall() -> None:
     st.markdown(
         """
     <div style='display:flex;flex-direction:column;align-items:center;justify-content:center;
-                min-height:70vh;text-align:center;'>
-      <div style='font-size:96px;filter:drop-shadow(0 0 40px #00C9FF88);'>🫀</div>
-      <h1 style='font-size:42px;font-weight:700;background:linear-gradient(135deg,#00C9FF,#0066FF);
-                 -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:16px 0 8px;'>
+                padding-top:20px;text-align:center;'>
+      <div style='font-size:80px;filter:drop-shadow(0 0 30px #00C9FF88);'>🫀</div>
+      <h1 style='font-size:38px;font-weight:700;background:linear-gradient(135deg,#00C9FF,#0066FF);
+                 -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:12px 0 6px;'>
         Intelli-Vitals
       </h1>
-      <p style='color:#6B7280;font-size:18px;max-width:480px;line-height:1.6;'>
-        AI-powered touchless health monitoring. Sign in with your Google account to begin.
+      <p style='color:#9CA3AF;font-size:16px;max-width:520px;line-height:1.5;margin:0 0 20px;'>
+        Touchless Health Monitoring & AI-Powered Clinical Triage Assistant
       </p>
-      <div style='margin-top:40px;display:flex;gap:32px;flex-wrap:wrap;justify-content:center;'>
-        <div style='background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
-                    border-radius:12px;padding:20px 28px;text-align:center;min-width:140px;'>
-          <div style='font-size:28px;'>💓</div>
-          <div style='color:#9CA3AF;font-size:13px;margin-top:6px;'>rPPG Heart Rate</div>
-        </div>
-        <div style='background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
-                    border-radius:12px;padding:20px 28px;text-align:center;min-width:140px;'>
-          <div style='font-size:28px;'>🔬</div>
-          <div style='color:#9CA3AF;font-size:13px;margin-top:6px;'>Report Analysis</div>
-        </div>
-        <div style='background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
-                    border-radius:12px;padding:20px 28px;text-align:center;min-width:140px;'>
-          <div style='font-size:28px;'>📋</div>
-          <div style='color:#9CA3AF;font-size:13px;margin-top:6px;'>Health History</div>
-        </div>
+    </div>""",
+        unsafe_allow_html=True,
+    )
+
+    if is_dev_mode():
+        st.markdown(
+            """
+        <div style='max-width:560px;margin:0 auto 20px;padding:16px;background:rgba(234,179,8,0.1);
+                    border:1px solid rgba(234,179,8,0.4);border-radius:12px;text-align:center;'>
+            <div style='font-size:16px;font-weight:700;color:#EAB308;letter-spacing:0.5px;'>
+                ⚠️ DEV MODE ACTIVE
+            </div>
+            <p style='color:#D1D5DB;font-size:13px;margin:8px 0 12px;'>
+                Local authentication bypass is enabled via <code>IV_DEV_LOGIN=1</code>. Click below to enter the dashboard.
+            </p>
+        </div>""",
+            unsafe_allow_html=True,
+        )
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🔑 Log in with Dev Mode Bypass", key="wall_dev_login", use_container_width=True):
+                dev_login()
+                st.rerun()
+
+    elif is_auth_configured():
+        st.markdown(
+            """
+        <div style='max-width:480px;margin:0 auto 16px;text-align:center;'>
+            <p style='color:#9CA3AF;font-size:14px;margin-bottom:12px;'>
+                Sign in to access your health dashboard
+            </p>
+        </div>""",
+            unsafe_allow_html=True,
+        )
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🔐 Sign in with Google", key="wall_google_login", use_container_width=True):
+                login()
+
+    else:
+        st.markdown(
+            """
+        <div style='max-width:620px;margin:0 auto 24px;padding:20px;background:rgba(59,130,246,0.08);
+                    border:1px solid rgba(59,130,246,0.3);border-radius:12px;text-align:left;'>
+            <div style='font-size:16px;font-weight:700;color:#60A5FA;margin-bottom:8px;'>
+                ℹ️ Authentication Setup Required
+            </div>
+            <p style='color:#D1D5DB;font-size:13px;line-height:1.6;margin-bottom:12px;'>
+                Sign in to access your health dashboard. Streamlit OpenID Connect (OIDC) authentication requires credentials in <code>.streamlit/secrets.toml</code>.
+            </p>
+            <ol style='color:#9CA3AF;font-size:13px;line-height:1.6;margin-left:18px;margin-bottom:12px;'>
+                <li>Copy <code>.streamlit/secrets.toml.example</code> to <code>.streamlit/secrets.toml</code></li>
+                <li>Add your Google Cloud OAuth Client ID, Client Secret, and a <code>cookie_secret</code></li>
+                <li>Set Authorized redirect URI in Google Cloud Console to: <code>http://localhost:8501/oauth2callback</code></li>
+            </ol>
+            <div style='border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;margin-top:10px;color:#9CA3AF;font-size:12px;'>
+                💡 <b>Offline / Local Testing:</b> Set <code>IV_DEV_LOGIN=1</code> in your environment or <code>.env</code> file to bypass login with Dev Mode.
+            </div>
+        </div>""",
+            unsafe_allow_html=True,
+        )
+
+    # Feature badges
+    st.markdown(
+        """
+    <div style='margin-top:20px;display:flex;gap:24px;flex-wrap:wrap;justify-content:center;'>
+      <div style='background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
+                  border-radius:12px;padding:16px 24px;text-align:center;min-width:140px;'>
+        <div style='font-size:26px;'>💓</div>
+        <div style='color:#9CA3AF;font-size:13px;margin-top:6px;'>rPPG Heart Rate</div>
+      </div>
+      <div style='background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
+                  border-radius:12px;padding:16px 24px;text-align:center;min-width:140px;'>
+        <div style='font-size:26px;'>🔬</div>
+        <div style='color:#9CA3AF;font-size:13px;margin-top:6px;'>Report Analysis</div>
+      </div>
+      <div style='background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
+                  border-radius:12px;padding:16px 24px;text-align:center;min-width:140px;'>
+        <div style='font-size:26px;'>📋</div>
+        <div style='color:#9CA3AF;font-size:13px;margin-top:6px;'>Health History</div>
       </div>
     </div>""",
         unsafe_allow_html=True,

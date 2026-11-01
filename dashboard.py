@@ -2,10 +2,9 @@
 dashboard.py — Streamlit UI: Page Config, Wiring, and Tab Composition
 """
 
-import html
 import streamlit as st
 
-from auth import handle_oauth_callback, init_session_state
+from auth import get_current_user, get_safe_user_profile, is_dev_mode, is_logged_in
 from db import init_db
 from ui.live import render_live_ui, run_live_polling
 from ui.records import render_records_tab
@@ -22,21 +21,22 @@ st.set_page_config(layout="wide", page_title="Intelli-Vitals", page_icon="🫀")
 # Apply Global CSS styles
 apply_global_styles()
 
-# Authentication & Session Management
-init_session_state()
-handle_oauth_callback()
+# Authentication & Sidebar
 render_sidebar()
 
 # Login Wall for unauthenticated users
-if not st.session_state.get("connected"):
+if not is_logged_in():
     render_login_wall()
     st.stop()
 
 # Authenticated View
-user_info = st.session_state.get("user_info", {})
-email = user_info.get("email", "")
-name = user_info.get("name", "User")
-first_name = html.escape(name.split()[0] if name else "User")
+user = get_current_user() or {}
+profile = get_safe_user_profile(user)
+email = profile["email"]
+first_name = profile["first_name"]
+
+if is_dev_mode():
+    st.warning("⚠️ **DEV MODE ACTIVE**: Running with local authentication bypass (`IV_DEV_LOGIN=1`). Do not use in production.")
 
 st.markdown(
     f"""
