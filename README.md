@@ -64,10 +64,16 @@ Copy `.env.example` to `.env`:
 ```bash
 cp .env.example .env
 ```
-Edit `.env` to set your Gemini API key:
+Edit `.env` to set your configuration. Comments should be on their own lines (prefixed with `#`):
 ```env
+# Gemini AI settings
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-2.5-flash
+
+# Optional dev & testing flags (0 or 1)
+IV_DEV_LOGIN=0
+IV_DISABLE_CAMERA=0
+IV_DISABLE_POLLING=0
 ```
 
 ---

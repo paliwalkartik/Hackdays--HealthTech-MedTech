@@ -3,31 +3,98 @@ config.py — Intelli-Vitals Central Configuration
 
 Loads configuration from environment variables and optional .env file.
 Provides typed access to server, camera, database, model, and application settings.
+Config is the single source of truth for application settings.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List
 
+# Variables that third-party SDKs (such as google-genai) read directly from os.environ
+THIRD_PARTY_ENV_VARS: tuple[str, ...] = ("GEMINI_API_KEY", "GOOGLE_API_KEY")
 
-def _parse_dotenv(dotenv_path: Path) -> Dict[str, str]:
-    """Parse a simple KEY=VALUE formatted .env file."""
+
+def _to_bool(val: Any) -> bool:
+    """Coerce value to boolean ("1", "true", "yes", "on" are True)."""
+    if isinstance(val, bool):
+        return val
+    if val is None:
+        return False
+    return str(val).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _parse_dotenv(dotenv_path: Path | str) -> Dict[str, str]:
+    """Parse a KEY=VALUE formatted .env file.
+
+    Supports:
+    - Quoted values: "value" or 'value' (retains internal '#' characters).
+    - Inline comments: '#' starts a comment only if at the start of the value
+      or preceded by whitespace when unquoted.
+    - 'export KEY=value' prefix.
+    - Blank lines and full-line comments starting with '#'.
+    """
     values: Dict[str, str] = {}
-    if not dotenv_path.is_file():
+    path = Path(dotenv_path)
+    if not path.is_file():
         return values
 
     try:
-        with open(dotenv_path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
+                if not line or line.startswith("#"):
                     continue
+
+                # Support optional 'export ' prefix (e.g. `export KEY=value`)
+                if line.startswith("export") and (len(line) > 6 and line[6].isspace()):
+                    line = line[6:].lstrip()
+
+                if "=" not in line:
+                    continue
+
                 k, _, v = line.partition("=")
-                values[k.strip()] = v.strip().strip('"').strip("'")
+                key = k.strip()
+                if not key:
+                    continue
+
+                val = v.strip()
+                # Parse value: handle quotes vs inline comments
+                if val and val[0] in ('"', "'"):
+                    quote_char = val[0]
+                    # Find closing quote
+                    closing_idx = -1
+                    i = 1
+                    while i < len(val):
+                        if val[i] == quote_char:
+                            if quote_char == '"' and val[i - 1] == "\\":
+                                i += 1
+                                continue
+                            closing_idx = i
+                            break
+                        i += 1
+
+                    if closing_idx != -1:
+                        raw_inside = val[1:closing_idx]
+                        if quote_char == '"':
+                            raw_inside = raw_inside.replace('\\"', '"').replace("\\n", "\n")
+                        values[key] = raw_inside
+                    else:
+                        # Unclosed quote: strip outer quote
+                        values[key] = val.strip(quote_char)
+                else:
+                    # Unquoted: '#' starts a comment only when at start of value or preceded by whitespace
+                    if val.startswith("#"):
+                        values[key] = ""
+                    else:
+                        match = re.search(r"\s+#", val)
+                        if match:
+                            val = val[:match.start()]
+                        values[key] = val.strip()
     except OSError:
         pass
     return values
@@ -49,6 +116,17 @@ class Config:
     ALLOWED_ORIGINS: List[str] = field(default_factory=lambda: ["http://localhost:8501"])
     SESSION_TTL_DAYS: int = 30
     IV_API_TOKEN: str = ""
+    IV_DEV_LOGIN: bool = False
+    IV_DISABLE_CAMERA: bool = False
+    IV_DISABLE_POLLING: bool = False
+
+    def __getattribute__(self, name: str) -> Any:
+        # Dynamically read os.environ at call time for the global config singleton
+        if name in ("IV_DEV_LOGIN", "IV_DISABLE_CAMERA", "IV_DISABLE_POLLING"):
+            if "config" in globals() and self is globals()["config"]:
+                if name in os.environ:
+                    return _to_bool(os.environ[name])
+        return super().__getattribute__(name)
 
     @classmethod
     def from_env(
@@ -57,19 +135,27 @@ class Config:
         env_file: Path | str | None = None,
     ) -> Config:
         """Create a Config instance from explicit env dict or os.environ + optional .env."""
-        # Start with .env if present
-        merged: Dict[str, str] = {}
+        # 1. Parse .env file if present
+        dotenv_values: Dict[str, str] = {}
         if env_file is None:
             default_env = Path(".env")
             if default_env.exists():
-                merged.update(_parse_dotenv(default_env))
-        elif Path(env_file).exists():
-            merged.update(_parse_dotenv(Path(env_file)))
+                dotenv_values = _parse_dotenv(default_env)
+        else:
+            p = Path(env_file)
+            if p.exists():
+                dotenv_values = _parse_dotenv(p)
 
-        # Overlay system environment
+        # 2. Export .env values into os.environ with setdefault ONLY for third-party SDK vars,
+        # never overriding real environment variables.
+        for var_name in THIRD_PARTY_ENV_VARS:
+            if var_name in dotenv_values and dotenv_values[var_name]:
+                os.environ.setdefault(var_name, dotenv_values[var_name])
+
+        # 3. Merge hierarchy: .env < os.environ < explicitly passed env dict
+        merged: Dict[str, str] = {}
+        merged.update(dotenv_values)
         merged.update(os.environ)
-
-        # Overlay any explicitly passed dictionary
         if env is not None:
             merged.update(env)
 
@@ -126,6 +212,9 @@ class Config:
             session_ttl_days = 30
 
         iv_api_token = merged.get("IV_API_TOKEN", "").strip()
+        iv_dev_login = _to_bool(merged.get("IV_DEV_LOGIN", "0"))
+        iv_disable_camera = _to_bool(merged.get("IV_DISABLE_CAMERA", "0"))
+        iv_disable_polling = _to_bool(merged.get("IV_DISABLE_POLLING", "0"))
 
         return cls(
             API_HOST=api_host,
@@ -142,7 +231,21 @@ class Config:
             ALLOWED_ORIGINS=allowed_origins,
             SESSION_TTL_DAYS=session_ttl_days,
             IV_API_TOKEN=iv_api_token,
+            IV_DEV_LOGIN=iv_dev_login,
+            IV_DISABLE_CAMERA=iv_disable_camera,
+            IV_DISABLE_POLLING=iv_disable_polling,
         )
+
+    def reload(
+        self,
+        env: Dict[str, str] | None = None,
+        env_file: Path | str | None = None,
+    ) -> Config:
+        """Reload configuration from environment and optional .env file."""
+        new_cfg = Config.from_env(env=env, env_file=env_file)
+        for k, v in new_cfg.__dict__.items():
+            setattr(self, k, v)
+        return self
 
     @property
     def api_token(self) -> str:
@@ -190,3 +293,10 @@ class Config:
 # Global singleton instance loaded from environment / .env
 config = Config.from_env()
 
+
+def reload(
+    env: Dict[str, str] | None = None,
+    env_file: Path | str | None = None,
+) -> Config:
+    """Reload the global config singleton."""
+    return config.reload(env=env, env_file=env_file)

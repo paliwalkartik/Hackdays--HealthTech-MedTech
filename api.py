@@ -84,7 +84,7 @@ def verify_token(provided_token: str | None) -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if os.environ.get("IV_DISABLE_CAMERA", "").lower() not in ("1", "true"):
+    if not config.IV_DISABLE_CAMERA:
         threading.Thread(target=capture_thread, daemon=True).start()
     yield
 

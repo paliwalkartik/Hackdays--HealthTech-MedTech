@@ -98,12 +98,10 @@ def run_live_polling(
     max_iterations: int | None = None,
 ) -> None:
     """Continuously poll backend for vitals and update telemetry UI in real-time."""
-    import os
-
     if "pulse_data" not in st.session_state:
         st.session_state.pulse_data = []
 
-    if max_iterations is None and os.environ.get("IV_DISABLE_POLLING") == "1":
+    if max_iterations is None and config.IV_DISABLE_POLLING:
         max_iterations = 1
 
     iterations = 0

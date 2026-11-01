@@ -10,6 +10,8 @@ from typing import Any, Dict, Optional
 
 import streamlit as st
 
+from config import config
+
 
 # ── Dev Mode User ─────────────────────────────────────────────────────────────
 DEV_USER: Dict[str, Any] = {
@@ -22,8 +24,8 @@ DEV_USER: Dict[str, Any] = {
 
 
 def is_dev_mode() -> bool:
-    """Check whether local development login bypass is enabled via environment."""
-    return os.environ.get("IV_DEV_LOGIN") == "1"
+    """Check whether local development login bypass is enabled via config."""
+    return config.IV_DEV_LOGIN
 
 
 def is_auth_configured() -> bool:
