@@ -19,13 +19,20 @@ Python 3.11 · FastAPI + uvicorn (`api.py`, port 8000) · Streamlit (`dashboard.
 | `vitals_engine.py` | `VitalsEngine`: POS → band-pass → FFT BPM |
 | `consultant.py` | `ClinicalConsultant`: Gemini snapshot from BPM list + face frame |
 | `document_service.py` | `DocumentAnalysisService`: Gemini File API report analysis |
-| `dashboard.py` | Streamlit UI: auth, tabs, SOS, hospitals, polling loop |
+| `dashboard.py` | Streamlit entrypoint (page setup, wiring, tabs) |
+| `auth.py` | Authentication, OAuth2 flow, session tokens, and cookie helpers |
+| `db.py` | Context-managed SQLite database interface for health records |
+| `hospitals.py` | Hospital data loader and specialty lookup |
+| `data/hospitals.json` | Hospital dataset for Bhopal medical centers |
+| `ui/styles.py` | Global styling and SOS animation CSS |
+| `ui/sidebar.py` | Sidebar navigation, login wall, and SOS emergency handling |
+| `ui/live.py` | Tab 1: Live camera feed, vitals telemetry, and polling loop |
+| `ui/records.py` | Tab 2: Patient health history and records table |
+| `ui/reports.py` | Tab 3: Report upload analysis and hospital recommendation cards |
 | `run.py` | Launches backend + dashboard |
 | `requirements.txt` | Pinned production dependencies |
 | `requirements-dev.txt` | Dev dependencies (`pytest`, `httpx`) |
 | `tests/` | Synthetic unit and smoke test suite |
-
-(Prompt REF-1 splits `dashboard.py` into modules; update this table when it lands.)
 
 ## Commands
 ```bash

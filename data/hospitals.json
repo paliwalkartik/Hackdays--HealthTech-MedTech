@@ -1,0 +1,133 @@
+{
+  "Cardiology": [
+    {
+      "name": "Bansal Hospital",
+      "area": "Shahpura, Bhopal",
+      "phone": "+91-755-4000000",
+      "rating": "⭐ 4.6",
+      "beds": "350+",
+      "icon": "🫀"
+    },
+    {
+      "name": "Hamidia Hospital – Cardiology",
+      "area": "Royal Market, Bhopal",
+      "phone": "+91-755-2540000",
+      "rating": "⭐ 4.2",
+      "beds": "800+",
+      "icon": "🏥"
+    },
+    {
+      "name": "AIIMS Bhopal – Cardiology",
+      "area": "Saket Nagar, Bhopal",
+      "phone": "+91-755-2672354",
+      "rating": "⭐ 4.8",
+      "beds": "960+",
+      "icon": "🏛"
+    }
+  ],
+  "Neurology": [
+    {
+      "name": "AIIMS Bhopal – Neurology",
+      "area": "Saket Nagar, Bhopal",
+      "phone": "+91-755-2672354",
+      "rating": "⭐ 4.8",
+      "beds": "960+",
+      "icon": "🧠"
+    },
+    {
+      "name": "Bansal Hospital – Neuro",
+      "area": "Shahpura, Bhopal",
+      "phone": "+91-755-4000000",
+      "rating": "⭐ 4.5",
+      "beds": "350+",
+      "icon": "🏥"
+    },
+    {
+      "name": "Choithram Hospital",
+      "area": "Indore Rd, Bhopal",
+      "phone": "+91-755-3988000",
+      "rating": "⭐ 4.3",
+      "beds": "500+",
+      "icon": "🏨"
+    }
+  ],
+  "Endocrinology": [
+    {
+      "name": "AIIMS Bhopal – Endocrinology",
+      "area": "Saket Nagar, Bhopal",
+      "phone": "+91-755-2672354",
+      "rating": "⭐ 4.8",
+      "beds": "960+",
+      "icon": "🔬"
+    },
+    {
+      "name": "Bansal Hospital",
+      "area": "Shahpura, Bhopal",
+      "phone": "+91-755-4000000",
+      "rating": "⭐ 4.6",
+      "beds": "350+",
+      "icon": "🏥"
+    },
+    {
+      "name": "Narmada Hospital",
+      "area": "Kolar Road, Bhopal",
+      "phone": "+91-755-2760100",
+      "rating": "⭐ 4.1",
+      "beds": "200+",
+      "icon": "🏨"
+    }
+  ],
+  "Orthopedics": [
+    {
+      "name": "People's Hospital – Ortho",
+      "area": "Bhanpur, Bhopal",
+      "phone": "+91-755-4077777",
+      "rating": "⭐ 4.5",
+      "beds": "700+",
+      "icon": "🦴"
+    },
+    {
+      "name": "AIIMS Bhopal – Orthopaedics",
+      "area": "Saket Nagar, Bhopal",
+      "phone": "+91-755-2672354",
+      "rating": "⭐ 4.8",
+      "beds": "960+",
+      "icon": "🏛"
+    },
+    {
+      "name": "Bansal Hospital – Ortho",
+      "area": "Shahpura, Bhopal",
+      "phone": "+91-755-4000000",
+      "rating": "⭐ 4.4",
+      "beds": "350+",
+      "icon": "🏥"
+    }
+  ],
+  "Pulmonology": [
+    {
+      "name": "AIIMS Bhopal – Pulmonology",
+      "area": "Saket Nagar, Bhopal",
+      "phone": "+91-755-2672354",
+      "rating": "⭐ 4.8",
+      "beds": "960+",
+      "icon": "🫁"
+    },
+    {
+      "name": "Hamidia Hospital",
+      "area": "Royal Market, Bhopal",
+      "phone": "+91-755-2540000",
+      "rating": "⭐ 4.2",
+      "beds": "800+",
+      "icon": "🏥"
+    },
+    {
+      "name": "BMHRC Bhopal",
+      "area": "Raisen Bypass, Bhopal",
+      "phone": "+91-755-2742212",
+      "rating": "⭐ 4.4",
+      "beds": "350+",
+      "icon": "🏨"
+    }
+  ]
+}
+
