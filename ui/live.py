@@ -12,6 +12,7 @@ import streamlit as st
 
 from config import config
 from db import save_log
+from ui.safe import esc
 
 
 def render_live_ui(email: str) -> tuple[st.delta_generator.DeltaGenerator, st.delta_generator.DeltaGenerator]:
@@ -51,16 +52,16 @@ def render_live_ui(email: str) -> tuple[st.delta_generator.DeltaGenerator, st.de
                                 f"""
                             <div class="snapshot-box">
                                 <div style='font-weight:600;color:#00C9FF;margin-bottom:10px;'>
-                                    {data.get('clinical_status','N/A')}
+                                    {esc(data.get('clinical_status','N/A'))}
                                 </div>
                                 <p style='color:#D1D5DB;margin:6px 0;'>
                                     <strong style='color:#9CA3AF;'>Avg BPM:</strong> {avg_bpm}
                                 </p>
                                 <p style='color:#D1D5DB;margin:6px 0;'>
-                                    <strong style='color:#9CA3AF;'>Visual:</strong> {data.get('visual_assessment','N/A')}
+                                    <strong style='color:#9CA3AF;'>Visual:</strong> {esc(data.get('visual_assessment','N/A'))}
                                 </p>
                                 <p style='color:#D1D5DB;margin:6px 0;'>
-                                    <strong style='color:#9CA3AF;'>Recommendation:</strong> {data.get('recommendation','N/A')}
+                                    <strong style='color:#9CA3AF;'>Recommendation:</strong> {esc(data.get('recommendation','N/A'))}
                                 </p>
                             </div>""",
                                 unsafe_allow_html=True,

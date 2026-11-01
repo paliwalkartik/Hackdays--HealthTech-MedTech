@@ -4,12 +4,12 @@ ui/records.py — Tab 2: Patient Health History and Past Records
 
 from __future__ import annotations
 
-import html
 import json
 import pandas as pd
 import streamlit as st
 
 from db import fetch_logs
+from ui.safe import esc
 
 
 def render_records_tab(email: str) -> None:
@@ -34,7 +34,7 @@ def render_records_tab(email: str) -> None:
                 }
             )
         df = pd.DataFrame(formatted)
-        safe_email = html.escape(email)
+        safe_email = esc(email)
         st.markdown(
             f"<p style='color:#6B7280;font-size:13px;margin-bottom:12px;'>"
             f"{len(formatted)} record(s) found for {safe_email}</p>",

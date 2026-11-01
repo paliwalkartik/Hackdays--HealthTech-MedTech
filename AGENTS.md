@@ -29,6 +29,7 @@ Python 3.11 · FastAPI + uvicorn (`api.py`, port 8000) · Streamlit (`dashboard.
 | `ui/live.py` | Tab 1: Live camera feed, vitals telemetry, and polling loop |
 | `ui/records.py` | Tab 2: Patient health history and records table |
 | `ui/reports.py` | Tab 3: Report upload analysis and hospital recommendation cards |
+| `ui/safe.py` | XSS-safe escaping helpers: `esc()`, `esc_list()`, `safe_picture_url()` — every user/model string in `unsafe_allow_html=True` blocks must go through `esc()` |
 | `run.py` | Launches backend + dashboard |
 | `requirements.txt` | Pinned production dependencies |
 | `requirements-dev.txt` | Dev dependencies (`pytest`, `httpx`) |
@@ -45,7 +46,7 @@ python -m py_compile *.py          # quick syntax check
 ## Hard rules
 1. **Safety honesty.** UI/API text must never say an ambulance/doctor/hospital was contacted unless a real integration did it. Emergency actions are `tel:` links (India: 112 unified, 108 ambulance — verify before release).
 2. **No secrets in code.** Keys, cookie secrets, OAuth credentials come from env / `.env` / `.streamlit/secrets.toml`. Never commit them. Never log them.
-3. **Escape everything.** Any model output, filename, or user-provided string rendered with `unsafe_allow_html=True` must go through `html.escape`.
+3. **Escape everything.** Any model output, filename, or user-provided string rendered with `unsafe_allow_html=True` must go through `esc()` from `ui/safe.py` (`html.escape` with `quote=True`, None-safe). Only `https://` picture URLs are allowed (`safe_picture_url()`).
 4. **The number in the DB is the measured number.** BPM and other metrics come from `VitalsEngine`, never from LLM output.
 5. **Rules decide, text explains.** Status, flags, specialty and urgency are deterministic, unit-tested code with cited sources. Explanations come from templates (en + hi). An LLM may only help *extract* rows from messy reports, only behind the provider interface, only with consent, and can never set or lower urgency. The app must work fully with `LLM_PROVIDER=none` and no API key.
 6. **Privacy.** By default nothing leaves the machine. Face images are never sent anywhere or stored. Report text is redacted (names, phones, IDs) before any optional LLM call, which needs explicit `llm_assist` consent. Delete any provider-side file after use. Real patient reports must never be committed: tests use synthetic reports only.

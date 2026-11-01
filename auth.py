@@ -121,11 +121,15 @@ def get_current_user() -> Optional[Dict[str, Any]]:
 
 
 def sanitize_picture_url(url: str) -> str:
-    """Sanitize and validate picture URL, ensuring safe http/https scheme and html escaping."""
+    """Sanitize and validate picture URL, ensuring only https:// scheme and html escaping.
+
+    http:// is rejected — Google profile photos are always https; accepting http
+    would allow downgrade attacks via a mixed-content avatar URL.
+    """
     if not url or not isinstance(url, str):
         return ""
     clean_url = url.strip()
-    if clean_url.startswith(("http://", "https://")):
+    if clean_url.startswith("https://"):
         return html.escape(clean_url, quote=True)
     return ""
 

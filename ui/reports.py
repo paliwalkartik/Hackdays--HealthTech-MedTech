@@ -4,13 +4,12 @@ ui/reports.py — Tab 3: Medical Report Upload, Analysis, and Hospital Recommend
 
 from __future__ import annotations
 
-import html
 import requests
 import streamlit as st
-import streamlit.components.v1 as components
 
 from config import config
 from hospitals import get_hospitals_for_specialty
+from ui.safe import esc
 
 
 def render_reports_tab() -> None:
@@ -61,8 +60,8 @@ def render_reports_tab() -> None:
                                 "Soon": "#FF6D00",
                                 "Routine": "#00E676",
                             }.get(urgency, "#888")
-                            safe_urgency = html.escape(str(urgency))
-                            safe_summary = html.escape(str(r.get("summary", "")))
+                            safe_urgency = esc(urgency)
+                            safe_summary = esc(r.get("summary", ""))
                             st.markdown(
                                 f"""
                             <div class="urgency-badge" style="background:rgba(0,0,0,0.3);border-color:{uc};">
@@ -82,10 +81,10 @@ def render_reports_tab() -> None:
                             with cb:
                                 st.markdown("**⚠ Health Risks**")
                                 for risk in r.get("health_risks", []):
-                                    st.markdown(f"• {risk}")
+                                    st.markdown(f"• {esc(risk)}")
                                 st.markdown("**🌿 Lifestyle Measures**")
                                 for m in r.get("lifestyle_measures", []):
-                                    st.markdown(f"• {m}")
+                                    st.markdown(f"• {esc(m)}")
                     else:
                         st.error(f"Backend error {res.status_code}")
                 except Exception as ex:
@@ -112,7 +111,7 @@ def render_reports_tab() -> None:
         specialty = r.get("medical_specialty", "General")
         hospitals = get_hospitals_for_specialty(specialty)
 
-        safe_specialty = html.escape(str(specialty))
+        safe_specialty = esc(specialty)
         st.markdown(
             "<hr style='border:none;border-top:1px solid rgba(255,255,255,0.07);margin:28px 0 20px;'>",
             unsafe_allow_html=True,
@@ -131,12 +130,12 @@ def render_reports_tab() -> None:
 
         for i, h in enumerate(hospitals[:3]):
             col_card, col_btn = st.columns([4, 1], gap="small")
-            h_name = html.escape(str(h["name"]))
-            h_area = html.escape(str(h["area"]))
-            h_phone = html.escape(str(h["phone"]))
-            h_rating = html.escape(str(h["rating"]))
-            h_beds = html.escape(str(h["beds"]))
-            h_icon = html.escape(str(h["icon"]))
+            h_name = esc(str(h["name"]))
+            h_area = esc(str(h["area"]))
+            h_phone = esc(str(h["phone"]))
+            h_rating = esc(str(h["rating"]))
+            h_beds = esc(str(h["beds"]))
+            h_icon = esc(str(h["icon"]))
 
             with col_card:
                 st.markdown(
@@ -162,18 +161,4 @@ def render_reports_tab() -> None:
                 st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
                 if st.button("📞 Contact", key=f"call_h_{i}", use_container_width=True):
                     st.toast(f"📞 Calling {h['name']} at {h['phone']}…", icon="🏥")
-                    components.html(
-                        f"""<script>
-                    const toast = document.createElement('div');
-                    toast.innerHTML = '📞 Connecting to {h_name}...';
-                    toast.style.cssText = `position:fixed;bottom:28px;right:28px;
-                        background:#1E293B;border:1px solid #00C9FF;border-radius:12px;
-                        padding:14px 22px;color:#F9FAFB;font-size:14px;font-weight:600;
-                        z-index:99999;box-shadow:0 8px 32px rgba(0,201,255,0.25);`;
-                    document.body.appendChild(toast);
-                    setTimeout(() => toast.style.opacity='0', 3500);
-                    setTimeout(() => toast.remove(), 4000);
-                    </script>""",
-                        height=0,
-                    )
 
