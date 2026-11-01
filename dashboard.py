@@ -61,6 +61,6 @@ with tab2:
     render_records_tab(email)
 
 with tab3:
-    render_reports_tab()
+    render_reports_tab(email)
 
 run_live_polling(bpm_placeholder, chart_placeholder)

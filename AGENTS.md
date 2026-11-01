@@ -29,7 +29,7 @@ Python 3.11 · FastAPI + uvicorn (`api.py`, port 8000) · Streamlit (`dashboard.
 | `ui/live.py` | Tab 1: Live camera feed, vitals telemetry, and polling loop |
 | `ui/records.py` | Tab 2: Patient health history and records table |
 | `ui/reports.py` | Tab 3: Report upload analysis and hospital recommendation cards |
-| `ui/safe.py` | XSS-safe escaping helpers: `esc()`, `esc_list()`, `safe_picture_url()` — every user/model string in `unsafe_allow_html=True` blocks must go through `esc()` |
+| `ui/safe.py` | Untrusted input & XSS sanitization helpers: `esc()`, `safe_cell()`, `safe_url()`, `safe_filename_component()`, control/zero-width/RTL stripping, length capping, findings sanitization |
 | `run.py` | Launches backend + dashboard |
 | `requirements.txt` | Pinned production dependencies |
 | `requirements-dev.txt` | Dev dependencies (`pytest`, `httpx`) |

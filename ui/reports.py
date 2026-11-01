@@ -8,11 +8,12 @@ import requests
 import streamlit as st
 
 from config import config
+from db import save_report_findings
 from hospitals import get_hospitals_for_specialty
-from ui.safe import esc
+from ui.safe import esc, safe_cell, sanitize_report_findings
 
 
-def render_reports_tab() -> None:
+def render_reports_tab(email: str = "") -> None:
     """Render medical report analysis upload and hospital suggestion cards."""
     st.markdown("<div class='label-sm'>Medical Report Analysis</div>", unsafe_allow_html=True)
     st.markdown(
@@ -53,15 +54,16 @@ def render_reports_tab() -> None:
                         if "error" in r:
                             st.error(r["error"])
                         else:
-                            st.session_state["last_analysis"] = r
-                            urgency = r.get("urgency_level", "Routine")
+                            clean_r = sanitize_report_findings(r)
+                            st.session_state["last_analysis"] = clean_r
+                            urgency = clean_r.get("urgency_level", "Routine")
                             uc = {
                                 "Urgent": "#FF1744",
                                 "Soon": "#FF6D00",
                                 "Routine": "#00E676",
                             }.get(urgency, "#888")
                             safe_urgency = esc(urgency)
-                            safe_summary = esc(r.get("summary", ""))
+                            safe_summary = esc(clean_r.get("summary", ""))
                             st.markdown(
                                 f"""
                             <div class="urgency-badge" style="background:rgba(0,0,0,0.3);border-color:{uc};">
@@ -73,18 +75,39 @@ def render_reports_tab() -> None:
                             ca, cb = st.columns(2)
                             with ca:
                                 st.markdown("**🏥 Specialty**")
-                                st.info(r.get("medical_specialty", "N/A"))
+                                st.info(clean_r.get("medical_specialty", "N/A"))
                                 st.markdown("**👁 Visual Observations**")
-                                st.write(r.get("visual_observations", "N/A"))
+                                st.write(clean_r.get("visual_observations", "N/A"))
                                 st.markdown("**⚕ Action Plan**")
-                                st.write(r.get("action_plan", "N/A"))
+                                st.write(clean_r.get("action_plan", "N/A"))
                             with cb:
                                 st.markdown("**⚠ Health Risks**")
-                                for risk in r.get("health_risks", []):
+                                for risk in clean_r.get("health_risks", []):
                                     st.markdown(f"• {esc(risk)}")
                                 st.markdown("**🌿 Lifestyle Measures**")
-                                for m in r.get("lifestyle_measures", []):
+                                for m in clean_r.get("lifestyle_measures", []):
                                     st.markdown(f"• {esc(m)}")
+
+                            # Save structured findings to DB
+                            st.markdown("---")
+                            save_col1, save_col2 = st.columns([2, 1])
+                            with save_col1:
+                                save_raw = st.checkbox(
+                                    "Save original text",
+                                    value=False,
+                                    key="save_raw_text_cb",
+                                    help="If unchecked, only structured findings are stored in the database.",
+                                )
+                            with save_col2:
+                                if st.button("💾 Save to Records", key="save_findings_btn"):
+                                    user_email = email or st.session_state.get("user_info", {}).get("email", "patient")
+                                    save_report_findings(
+                                        email=user_email,
+                                        findings=clean_r,
+                                        raw_text=uploaded_file.name if uploaded_file else None,
+                                        save_raw_text=save_raw,
+                                    )
+                                    st.success("✅ Findings saved to database.")
                     else:
                         st.error(f"Backend error {res.status_code}")
                 except Exception as ex:
