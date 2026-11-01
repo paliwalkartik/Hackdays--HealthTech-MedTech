@@ -4,12 +4,12 @@ Standing context for any coding agent (Claude Code, Cursor, Windsurf) working in
 Read this fully before every task. Then do exactly the prompt you were given, nothing more.
 
 ## What this project is
-Touchless heart-rate monitoring from a webcam (rPPG, POS algorithm) + Gemini-based clinical snapshot + medical-report analysis + hospital suggestions + SOS. Built for the HealthTech & MedTech Hackathon 2026 (Bhopal, India). Target users: Indian patients with a phone/laptop camera.
+Touchless heart-rate monitoring from a webcam (rPPG, POS algorithm) + rule-based heart-rate interpretation + offline medical-report reading (OCR + lab-value parsing against reference ranges) + hospital suggestions + SOS. An LLM is an optional, consent-gated fallback for messy reports only. Built for the HealthTech & MedTech Hackathon 2026 (Bhopal, India). Target users: Indian patients with a phone/laptop camera.
 
 **It is a wellness/triage aid, not a medical device.** Never write copy, comments, or UI text that claims diagnosis, "clinical-grade" or "medical-grade" accuracy, or that an action happened when it did not.
 
 ## Stack
-Python 3.11 · FastAPI + uvicorn (`api.py`, port 8000) · Streamlit (`dashboard.py`, port 8501) · OpenCV · Mediapipe 0.10.14 (`mp.solutions`) · NumPy/SciPy · google-genai (Gemini) · SQLite (`health_data.db`) · Streamlit OIDC (Google OAuth).
+Python 3.11 · FastAPI + uvicorn (`api.py`, port 8000) · Streamlit (`dashboard.py`, port 8501) · OpenCV · Mediapipe 0.10.14 (`mp.solutions`) · NumPy/SciPy · pdfplumber / Tesseract-or-RapidOCR / rapidfuzz (report parsing) · optional LLM provider (Gemini / Groq / Ollama / none) · SQLite (`health_data.db`) · Streamlit OIDC (Google OAuth).
 
 ## Files (current)
 | File | Role |
@@ -17,8 +17,8 @@ Python 3.11 · FastAPI + uvicorn (`api.py`, port 8000) · Streamlit (`dashboard.
 | `config.py` | Central typed configuration (env + .env) |
 | `api.py` | FastAPI: webcam capture thread, MJPEG `/video_feed`, `/vitals`, `/consult`, `/reset_vitals`, `/analyze_report` |
 | `vitals_engine.py` | `VitalsEngine`: POS → band-pass → FFT BPM |
-| `consultant.py` | `ClinicalConsultant`: Gemini snapshot from BPM list + face frame |
-| `document_service.py` | `DocumentAnalysisService`: Gemini File API report analysis |
+| `consultant.py` | `ClinicalConsultant`: Gemini snapshot from BPM list + face frame (replaced by `health_rules.py` + `narrator.py` in AI-1/AI-2) |
+| `document_service.py` | `DocumentAnalysisService`: Gemini File API report analysis (replaced by `report_extract.py`, `lab_parser.py`, `report_rules.py`, `llm/` in AI-3..AI-6) |
 | `dashboard.py` | Streamlit entrypoint (page setup, wiring, tabs) |
 | `auth.py` | Streamlit OIDC wrapper, profile sanitization, and Dev Mode bypass |
 | `db.py` | Context-managed SQLite database interface for health records |
@@ -47,8 +47,8 @@ python -m py_compile *.py          # quick syntax check
 2. **No secrets in code.** Keys, cookie secrets, OAuth credentials come from env / `.env` / `.streamlit/secrets.toml`. Never commit them. Never log them.
 3. **Escape everything.** Any model output, filename, or user-provided string rendered with `unsafe_allow_html=True` must go through `html.escape`.
 4. **The number in the DB is the measured number.** BPM and other metrics come from `VitalsEngine`, never from LLM output.
-5. **LLM is the narrator, not the clinician.** Status/urgency thresholds are deterministic code; Gemini writes explanation text only, via structured JSON output, with a rule-based fallback if it fails.
-6. **Privacy.** Face images and reports leave the device only after explicit in-app consent. Delete uploaded files from the Gemini File API after use. Never store raw face images.
+5. **Rules decide, text explains.** Status, flags, specialty and urgency are deterministic, unit-tested code with cited sources. Explanations come from templates (en + hi). An LLM may only help *extract* rows from messy reports, only behind the provider interface, only with consent, and can never set or lower urgency. The app must work fully with `LLM_PROVIDER=none` and no API key.
+6. **Privacy.** By default nothing leaves the machine. Face images are never sent anywhere or stored. Report text is redacted (names, phones, IDs) before any optional LLM call, which needs explicit `llm_assist` consent. Delete any provider-side file after use. Real patient reports must never be committed: tests use synthetic reports only.
 7. **Thread safety.** All shared camera/vitals state goes through the lock introduced in BE-1.
 8. **Don't break the demo.** Local single-user `python run.py` on Windows, macOS and Linux must keep working. Add features behind sensible defaults.
 9. **Parameterised SQL only.** Use context-managed connections.
@@ -56,9 +56,9 @@ python -m py_compile *.py          # quick syntax check
 
 ## Conventions
 - Python 3.11, type hints on new code, `logging` (not `print`) in new code, config via a single `config.py` (from CFG-1 onward).
-- Tests live in `tests/`, use synthetic data only (no webcam, no network, no real Gemini calls — mock them).
+- Tests live in `tests/`, use synthetic data only (no webcam, no network, no real LLM calls — mock providers).
 - Pin dependencies; when adding one, add it to `requirements.txt` with a version.
-- Medical thresholds and copy live in one module (`health_rules.py`, from AI-2 onward) so they can be reviewed by a clinician.
+- Medical thresholds and copy live in one module (`health_rules.py` and `data/lab_tests.json`, from AI-1/AI-4 onward; every entry carries a source and a `verified` flag, and never invent values) so they can be reviewed by a clinician.
 
 ## Definition of done (every prompt)
 - [ ] Code compiles, `pytest -q` passes, new behaviour has a test where feasible.
@@ -71,4 +71,3 @@ python -m py_compile *.py          # quick syntax check
 - Accuracy of rPPG on real faces is unvalidated until the VAL prompts run.
 - Hospital data is static and unverified until DATA-4 / UX-3 replace it.
 - Server-side webcam means single-user local deployment until FEAT-5.
-
