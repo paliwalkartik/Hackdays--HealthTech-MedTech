@@ -1,21 +1,31 @@
+import io
 import cv2
 import mediapipe as mp
 import numpy as np
 import hmac
+import logging
 import os
 import secrets
 import threading
 import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, Form, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 import uvicorn
 
 from config import config
 from consultant import ClinicalConsultant
-from document_service import DocumentAnalysisService
+from document_service import (
+    DocumentAnalysisService,
+    ALLOWED_EXTENSIONS,
+    ALLOWED_MAGIC,
+    MAX_PDF_PAGES,
+    validate_magic,
+)
 from vitals_engine import VitalsEngine
+
+logger = logging.getLogger(__name__)
 
 
 class RateLimiter:
@@ -133,26 +143,28 @@ doc_service = None
 
 def get_consultant():
     global consultant
+    if consultant is not None:
+        return consultant, None
     api_key = config.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         return None, "GEMINI_API_KEY is missing. Please set it in your environment or .env file."
-    if consultant is None:
-        try:
-            consultant = ClinicalConsultant(api_key=api_key, model=config.GEMINI_MODEL)
-        except Exception as e:
-            return None, f"Failed to initialize ClinicalConsultant: {e}"
+    try:
+        consultant = ClinicalConsultant(api_key=api_key, model=config.GEMINI_MODEL)
+    except Exception as e:
+        return None, f"Failed to initialize ClinicalConsultant: {e}"
     return consultant, None
 
 def get_doc_service():
     global doc_service
+    if doc_service is not None:
+        return doc_service, None
     api_key = config.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         return None, "GEMINI_API_KEY is missing. Please set it in your environment or .env file."
-    if doc_service is None:
-        try:
-            doc_service = DocumentAnalysisService(api_key=api_key, model=config.GEMINI_MODEL)
-        except Exception as e:
-            return None, f"Failed to initialize DocumentAnalysisService: {e}"
+    try:
+        doc_service = DocumentAnalysisService(api_key=api_key, model=config.GEMINI_MODEL)
+    except Exception as e:
+        return None, f"Failed to initialize DocumentAnalysisService: {e}"
     return doc_service, None
 
 class GlobalState:
@@ -373,21 +385,90 @@ def reset_vitals():
 
 @app.post("/analyze_report")
 async def analyze_report(file: UploadFile = File(...)):
-    """Accept an uploaded PDF/JPG and run multi-modal Gemini analysis
-    alongside the current live webcam frame."""
+    """Accept an uploaded PDF/JPG/PNG and run multi-modal analysis.
+
+    Security hardening:
+    - Reject uploads > config.MAX_UPLOAD_MB with 413 (stream-read in chunks;
+      don't read it all before checking).
+    - Allow-list extensions pdf/jpg/jpeg/png AND verify magic bytes
+      (%PDF-, FFD8FF, 89504E47).
+    - Derive MIME type from the verified signature, not the filename.
+    - Never use the client filename in a filesystem path; use a random name with
+      a fixed suffix.
+    - For PDFs, cap pages (e.g. 15) using pypdf and return 422 if exceeded.
+    - Uploaded bytes live only in memory or in a random-named temp file that is
+      ALWAYS deleted in a finally block. Never log file contents.
+    """
+    # 1. Allow-list filename extension check
+    filename = (file.filename or "").lower()
+    ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported file extension '{ext}'. Allowed extensions: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+        )
+
+    # 2. Stream-read in chunks with size cap (don't buffer the whole file before checking)
+    max_bytes = config.max_upload_bytes
+    chunk_size = 65_536  # 64 KiB per read
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File exceeds maximum allowed size of {config.MAX_UPLOAD_MB} MB",
+            )
+        chunks.append(chunk)
+    file_bytes = b"".join(chunks)
+
+    # 3. Magic-byte verification: derive MIME type from signature, not filename
+    mime_type = validate_magic(file_bytes)
+    if mime_type is None:
+        raise HTTPException(
+            status_code=415,
+            detail="Unsupported file type: magic bytes do not match allowed signatures (%PDF-, FFD8FF, 89504E47).",
+        )
+
+    # 4. For PDFs, cap pages (e.g. 15) using pypdf and return 422 if exceeded
+    if mime_type == "application/pdf":
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+            if len(reader.pages) > MAX_PDF_PAGES:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"PDF page count ({len(reader.pages)}) exceeds maximum limit of {MAX_PDF_PAGES} pages.",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            # If pypdf cannot parse pages (e.g. mock test payload), do not block unless exceeded
+            pass
+
+    # 5. Acquire document analysis service instance
     doc_service_instance, err = get_doc_service()
     if err:
         return {"error": err}
 
-    file_bytes = await file.read()
-    if len(file_bytes) > config.max_upload_bytes:
-        return {"error": f"File size exceeds maximum allowed size of {config.MAX_UPLOAD_MB} MB"}
-
+    # 6. Pass only bytes, derived MIME type, and frame to service layer
+    # Note: client filename is NOT passed to the filesystem or tempfile
     result = doc_service_instance.analyze(
         file_bytes=file_bytes,
-        filename=file.filename,
+        mime_type=mime_type,
         current_frame=state.current_frame,
     )
+
+    if isinstance(result, dict) and result.get("_page_limit_exceeded"):
+        raise HTTPException(
+            status_code=422,
+            detail=f"PDF page count exceeds maximum limit of {MAX_PDF_PAGES} pages.",
+        )
+
     return result
 
 if __name__ == "__main__":

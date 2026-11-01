@@ -13,3 +13,4 @@ requests==2.34.2
 streamlit-js-eval==1.0.0
 Pillow==12.3.0
 python-multipart==0.0.33
+pypdf==5.1.0
