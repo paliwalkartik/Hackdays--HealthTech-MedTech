@@ -22,7 +22,7 @@ def render_live_ui(email: str) -> tuple[st.delta_generator.DeltaGenerator, st.de
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         st.markdown("<div class='label-sm'>Patient Camera Feed</div>", unsafe_allow_html=True)
         st.markdown(
-            f'<img src="{config.API_BASE_URL}/video_feed" width="100%" '
+            f'<img src="{config.API_BASE_URL}/video_feed?token={config.api_token}" width="100%" '
             'style="border-radius:12px;border:1px solid rgba(255,255,255,0.1);">',
             unsafe_allow_html=True,
         )
@@ -38,7 +38,7 @@ def render_live_ui(email: str) -> tuple[st.delta_generator.DeltaGenerator, st.de
         if st.button("⚡ Generate Clinical Snapshot", key="snapshot_btn"):
             with st.spinner("Analyzing vitals and facial data via Gemini..."):
                 try:
-                    res = requests.get(f"{config.API_BASE_URL}/consult", timeout=60)
+                    res = requests.get(f"{config.API_BASE_URL}/consult", headers=config.api_headers, timeout=60)
                     if res.status_code == 200:
                         data = res.json()
                         if "error" in data:
@@ -78,7 +78,7 @@ def render_live_ui(email: str) -> tuple[st.delta_generator.DeltaGenerator, st.de
         with meas_col2:
             if st.button("🔄 New Reading", key="reset_btn"):
                 try:
-                    requests.post(f"{config.API_BASE_URL}/reset_vitals", timeout=3)
+                    requests.post(f"{config.API_BASE_URL}/reset_vitals", headers=config.api_headers, timeout=3)
                     if "pulse_data" in st.session_state:
                         st.session_state.pulse_data = []
                     st.success("Ready for new reading!")
@@ -111,7 +111,7 @@ def run_live_polling(
             break
         iterations += 1
         try:
-            res = requests.get(f"{config.API_BASE_URL}/vitals", timeout=1)
+            res = requests.get(f"{config.API_BASE_URL}/vitals", headers=config.api_headers, timeout=1)
             if res.status_code == 200:
                 data = res.json()
                 bpm = data.get("bpm", 0)

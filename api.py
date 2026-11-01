@@ -1,18 +1,76 @@
 import cv2
 import mediapipe as mp
+import numpy as np
+import hmac
+import os
+import secrets
 import threading
 import time
-from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, UploadFile, File, Form, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 import uvicorn
-from vitals_engine import VitalsEngine
+
+from config import config
 from consultant import ClinicalConsultant
 from document_service import DocumentAnalysisService
-from fastapi.middleware.cors import CORSMiddleware
-import os
-from config import config
+from vitals_engine import VitalsEngine
 
-from contextlib import asynccontextmanager
+
+class RateLimiter:
+    """Thread-safe in-memory sliding-window rate limiter per client IP."""
+
+    def __init__(self, max_requests: int = 6, window_seconds: float = 60.0):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._lock = threading.Lock()
+        self._requests: dict[str, list[float]] = {}
+
+    def is_rate_limited(self, ip: str) -> bool:
+        now = time.time()
+        with self._lock:
+            timestamps = self._requests.get(ip, [])
+            cutoff = now - self.window_seconds
+            valid = [t for t in timestamps if t > cutoff]
+            if len(valid) >= self.max_requests:
+                self._requests[ip] = valid
+                return True
+            valid.append(now)
+            self._requests[ip] = valid
+            return False
+
+    def reset(self) -> None:
+        """Clear all tracked request history (useful for tests)."""
+        with self._lock:
+            self._requests.clear()
+
+
+rate_limiter = RateLimiter(max_requests=6, window_seconds=60.0)
+
+_api_token: str | None = None
+
+
+def get_api_token() -> str:
+    """Return the shared API token from environment, config, or lazily generated."""
+    global _api_token
+    token = os.environ.get("IV_API_TOKEN", "").strip() or config.api_token
+    if token:
+        return token
+    if _api_token is None:
+        _api_token = secrets.token_hex(32)
+        os.environ["IV_API_TOKEN"] = _api_token
+        config.IV_API_TOKEN = _api_token
+    return _api_token
+
+
+def verify_token(provided_token: str | None) -> bool:
+    """Constant-time validation of provided token against expected token."""
+    if not provided_token or not isinstance(provided_token, str):
+        return False
+    expected = get_api_token()
+    return hmac.compare_digest(provided_token.encode("utf-8"), expected.encode("utf-8"))
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -20,15 +78,49 @@ async def lifespan(app: FastAPI):
         threading.Thread(target=capture_thread, daemon=True).start()
     yield
 
+
 app = FastAPI(lifespan=lifespan)
 
 
+@app.middleware("http")
+async def security_and_rate_limit_middleware(request: Request, call_next):
+    path = request.url.path.rstrip("/")
+    # Health check and CORS preflights are exempt from auth and rate limits
+    if path == "/health" or request.method == "OPTIONS":
+        return await call_next(request)
+
+    # Token authentication
+    if path == "/video_feed":
+        token = request.query_params.get("token") or request.headers.get("X-IV-Token")
+    else:
+        token = request.headers.get("X-IV-Token")
+
+    if not verify_token(token):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Unauthorized: invalid or missing API token"},
+        )
+
+    # Per-IP rate limiting on heavy AI endpoints (/consult and /analyze_report)
+    if path in ("/consult", "/analyze_report"):
+        client_ip = request.client.host if request.client else "127.0.0.1"
+        if rate_limiter.is_rate_limited(client_ip):
+            return JSONResponse(
+                status_code=429,
+                headers={"Retry-After": "60"},
+                content={"detail": "Too Many Requests: Rate limit exceeded (6 requests per minute)"},
+            )
+
+    return await call_next(request)
+
+
+# CORS: allow_origins=config.ALLOWED_ORIGINS, credentials=False, methods GET/POST, headers used
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "X-IV-Token"],
 )
 
 mp_face_detection = mp.solutions.face_detection
@@ -211,8 +303,9 @@ def capture_thread():
 
 def generate_frames():
     while True:
-        if state.processed_frame is not None:
-            ret, buffer = cv2.imencode('.jpg', state.processed_frame)
+        frame = state.processed_frame
+        if frame is not None:
+            ret, buffer = cv2.imencode('.jpg', frame)
             if ret:
                 frame_bytes = buffer.tobytes()
                 yield (b'--frame\r\n'
@@ -220,7 +313,17 @@ def generate_frames():
             else:
                 time.sleep(0.01)
         else:
-            time.sleep(0.01)
+            # Yield a blank frame if camera is not yet ready or disabled
+            blank = np.zeros((240, 320, 3), dtype=np.uint8)
+            ret, buffer = cv2.imencode('.jpg', blank)
+            if ret:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            time.sleep(0.05)
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 @app.get("/video_feed")
 def video_feed():

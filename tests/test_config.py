@@ -102,3 +102,20 @@ def test_camera_backend_code():
     cfg_v4l2 = Config(CAMERA_BACKEND="v4l2")
     assert isinstance(cfg_v4l2.get_camera_backend_code(), int)
 
+
+def test_config_api_token_and_headers(monkeypatch):
+    """Verify api_token resolution and HTTP authentication headers dict."""
+    monkeypatch.delenv("IV_API_TOKEN", raising=False)
+    cfg = Config(IV_API_TOKEN="secret-token-123")
+    assert cfg.api_token == "secret-token-123"
+    assert cfg.api_headers == {"X-IV-Token": "secret-token-123"}
+
+    cfg_empty = Config(IV_API_TOKEN="")
+    assert cfg_empty.api_headers == {}
+
+    # Falls back to os.environ if IV_API_TOKEN field is empty
+    monkeypatch.setenv("IV_API_TOKEN", "env-token-456")
+    assert cfg_empty.api_token == "env-token-456"
+    assert cfg_empty.api_headers == {"X-IV-Token": "env-token-456"}
+
+

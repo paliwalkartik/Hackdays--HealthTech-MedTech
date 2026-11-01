@@ -132,8 +132,9 @@ Start both the FastAPI backend and Streamlit dashboard simultaneously:
 ```bash
 python run.py
 ```
-- **Backend API:** `http://127.0.0.1:8000` (docs: `/docs`)
+- **Backend API:** `http://127.0.0.1:8000` (health: `/health`, docs: `/docs`)
 - **Streamlit UI:** `http://localhost:8501`
+- **Inter-service Security:** `run.py` automatically generates a random per-process API token (`IV_API_TOKEN`) shared with both services via environment. All API endpoints except `/health` require authentication (`X-IV-Token` header or `?token=` parameter for video stream). Heavy endpoints (`/consult`, `/analyze_report`) are rate-limited to 6 requests/min per IP.
 
 ---
 

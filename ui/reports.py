@@ -46,6 +46,7 @@ def render_reports_tab() -> None:
                                 uploaded_file.type,
                             )
                         },
+                        headers=config.api_headers,
                         timeout=120,
                     )
                     if res.status_code == 200:

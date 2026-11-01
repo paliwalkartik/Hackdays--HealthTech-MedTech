@@ -48,6 +48,7 @@ class Config:
     DB_PATH: str = "health_data.db"
     ALLOWED_ORIGINS: List[str] = field(default_factory=lambda: ["http://localhost:8501"])
     SESSION_TTL_DAYS: int = 30
+    IV_API_TOKEN: str = ""
 
     @classmethod
     def from_env(
@@ -124,6 +125,8 @@ class Config:
         except ValueError:
             session_ttl_days = 30
 
+        iv_api_token = merged.get("IV_API_TOKEN", "").strip()
+
         return cls(
             API_HOST=api_host,
             API_PORT=api_port,
@@ -138,7 +141,21 @@ class Config:
             DB_PATH=db_path,
             ALLOWED_ORIGINS=allowed_origins,
             SESSION_TTL_DAYS=session_ttl_days,
+            IV_API_TOKEN=iv_api_token,
         )
+
+    @property
+    def api_token(self) -> str:
+        """API token for service-to-service communication."""
+        return self.IV_API_TOKEN or os.environ.get("IV_API_TOKEN", "").strip()
+
+    @property
+    def api_headers(self) -> Dict[str, str]:
+        """HTTP headers required to authenticate with the API backend."""
+        token = self.api_token
+        if token:
+            return {"X-IV-Token": token}
+        return {}
 
     def get_camera_backend_code(self) -> int:
         """Resolve OpenCV VideoCapture backend flag based on CAMERA_BACKEND."""

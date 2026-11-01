@@ -15,7 +15,7 @@ Python 3.11 · FastAPI + uvicorn (`api.py`, port 8000) · Streamlit (`dashboard.
 | File | Role |
 |---|---|
 | `config.py` | Central typed configuration (env + .env) |
-| `api.py` | FastAPI: webcam capture thread, MJPEG `/video_feed`, `/vitals`, `/consult`, `/reset_vitals`, `/analyze_report` |
+| `api.py` | FastAPI: webcam capture thread, MJPEG `/video_feed`, `/vitals`, `/consult`, `/reset_vitals`, `/analyze_report`, `/health` |
 | `vitals_engine.py` | `VitalsEngine`: POS → band-pass → FFT BPM |
 | `consultant.py` | `ClinicalConsultant`: Gemini snapshot from BPM list + face frame (replaced by `health_rules.py` + `narrator.py` in AI-1/AI-2) |
 | `document_service.py` | `DocumentAnalysisService`: Gemini File API report analysis (replaced by `report_extract.py`, `lab_parser.py`, `report_rules.py`, `llm/` in AI-3..AI-6) |
